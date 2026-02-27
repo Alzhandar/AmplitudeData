@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -42,11 +43,14 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'amplitude',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -112,7 +116,11 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'ru'
+
+LANGUAGES = [
+    ('ru', 'Русский'),
+]
 
 TIME_ZONE = 'UTC'
 
@@ -134,3 +142,19 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)
+CELERY_BEAT_SCHEDULE = {
+    'run-amplitude-sync-by-admin-time': {
+        'task': 'amplitude.tasks.run_scheduled_sync',
+        'schedule': timedelta(minutes=1),
+    },
+}
+
+AMPLITUDE_API_KEY = os.getenv('AMPLITUDE_API_KEY', '')
+AMPLITUDE_SECRET_KEY = os.getenv('AMPLITUDE_SECRET_KEY', '')
+AMPLITUDE_EXPORT_URL = os.getenv('AMPLITUDE_EXPORT_URL', 'https://amplitude.com/api/2/export')
+AMPLITUDE_TIMEOUT_SECONDS = int(os.getenv('AMPLITUDE_TIMEOUT_SECONDS', '30'))
+AMPLITUDE_MOBILE_EVENT_TYPES = [
+    event_type.strip()
+    for event_type in os.getenv('AMPLITUDE_MOBILE_EVENT_TYPES', '').split(',')
+    if event_type.strip()
+]
