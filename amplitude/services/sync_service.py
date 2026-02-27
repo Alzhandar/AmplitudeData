@@ -208,11 +208,27 @@ class AmplitudeSyncService:
         )
 
     def _extract_device_metadata(self, event: dict) -> tuple[str, str, str]:
-        return (
-            self._clean_text(event.get('device_brand')),
-            self._clean_text(event.get('device_manufacturer')),
-            self._clean_text(event.get('device_model')),
-        )
+        device_brand = self._clean_text(event.get('device_brand'))
+        device_manufacturer = self._clean_text(event.get('device_manufacturer'))
+        device_model = self._clean_text(event.get('device_model'))
+
+        device_type = self._clean_text(event.get('device_type'))
+        device_family = self._clean_text(event.get('device_family'))
+
+        if not device_model:
+            device_model = device_type or device_family
+
+        if not device_brand:
+            family_brand = device_family.replace(' Phone', '').strip() if device_family else ''
+            if family_brand:
+                device_brand = family_brand
+            elif device_type:
+                device_brand = device_type.split(' ')[0].strip()
+
+        if not device_manufacturer:
+            device_manufacturer = device_brand
+
+        return device_brand, device_manufacturer, device_model
 
     def _extract_phone_number(self, event: dict) -> str:
         containers = [event, event.get('user_properties') or {}, event.get('event_properties') or {}]
