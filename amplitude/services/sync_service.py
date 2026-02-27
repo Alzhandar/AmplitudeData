@@ -21,6 +21,7 @@ class AmplitudeSyncService:
         'number',
     )
     mobile_platforms = {'ios', 'android', 'mobile'}
+    missing_markers = {'', 'none', 'null', 'undefined', 'nan'}
 
     def __init__(self, client: Optional[AmplitudeExportClient] = None) -> None:
         self.client = client or AmplitudeExportClient()
@@ -48,7 +49,7 @@ class AmplitudeSyncService:
         if not self._is_mobile_event(event, self.required_event_types):
             return 0
 
-        device_id = str(event.get('device_id', '')).strip()
+        device_id = self._clean_text(event.get('device_id'))
         if not device_id:
             return 0
 
@@ -56,15 +57,16 @@ class AmplitudeSyncService:
         if event_time.date() != target_date:
             return 0
 
-        user_id = str(event.get('user_id', '')).strip()
-        event_type = str(event.get('event_type', '')).strip()
-        platform = str(event.get('platform', '')).strip().lower()
+        user_id = self._clean_text(event.get('user_id'))
+        event_type = self._clean_text(event.get('event_type'))
+        platform = self._clean_text(event.get('platform')).lower()
+        device_brand, device_manufacturer, device_model = self._extract_device_metadata(event)
         phone_number = self._extract_phone_number(event)
-        insert_id = str(event.get('insert_id', '')).strip()
+        insert_id = self._clean_text(event.get('insert_id'))
         dedupe_key = self._build_dedupe_key(event, event_time)
 
         with transaction.atomic():
-            _, created = MobileSession.objects.get_or_create(
+            session, created = MobileSession.objects.get_or_create(
                 dedupe_key=dedupe_key,
                 defaults={
                     'date': event_time.date(),
@@ -74,12 +76,23 @@ class AmplitudeSyncService:
                     'device_id': device_id,
                     'phone_number': phone_number,
                     'platform': platform,
+                    'device_brand': device_brand,
+                    'device_manufacturer': device_manufacturer,
+                    'device_model': device_model,
                     'insert_id': insert_id,
                     'raw_event': event,
                 },
             )
+
             if not created:
-                return 0
+                self._update_session_metadata(
+                    session=session,
+                    phone_number=phone_number,
+                    platform=platform,
+                    device_brand=device_brand,
+                    device_manufacturer=device_manufacturer,
+                    device_model=device_model,
+                )
 
             self._upsert_daily_activity(
                 date_value=event_time.date(),
@@ -88,9 +101,42 @@ class AmplitudeSyncService:
                 user_id=user_id,
                 phone_number=phone_number,
                 platform=platform,
+                device_brand=device_brand,
+                device_manufacturer=device_manufacturer,
+                device_model=device_model,
             )
 
-        return 1
+        return 1 if created else 0
+
+    def _update_session_metadata(
+        self,
+        session: MobileSession,
+        phone_number: str,
+        platform: str,
+        device_brand: str,
+        device_manufacturer: str,
+        device_model: str,
+    ) -> None:
+        fields_to_update = []
+
+        if self._is_missing_text(session.phone_number) and phone_number:
+            session.phone_number = phone_number
+            fields_to_update.append('phone_number')
+        if self._is_missing_text(session.platform) and platform:
+            session.platform = platform
+            fields_to_update.append('platform')
+        if self._is_missing_text(session.device_brand) and device_brand:
+            session.device_brand = device_brand
+            fields_to_update.append('device_brand')
+        if self._is_missing_text(session.device_manufacturer) and device_manufacturer:
+            session.device_manufacturer = device_manufacturer
+            fields_to_update.append('device_manufacturer')
+        if self._is_missing_text(session.device_model) and device_model:
+            session.device_model = device_model
+            fields_to_update.append('device_model')
+
+        if fields_to_update:
+            session.save(update_fields=fields_to_update)
 
     def _upsert_daily_activity(
         self,
@@ -100,6 +146,9 @@ class AmplitudeSyncService:
         user_id: str,
         phone_number: str,
         platform: str,
+        device_brand: str,
+        device_manufacturer: str,
+        device_model: str,
     ) -> None:
         daily, _ = DailyDeviceActivity.objects.get_or_create(
             date=date_value,
@@ -108,6 +157,9 @@ class AmplitudeSyncService:
                 'user_id': user_id,
                 'phone_number': phone_number,
                 'platform': platform,
+                'device_brand': device_brand,
+                'device_manufacturer': device_manufacturer,
+                'device_model': device_model,
                 'visits_count': 0,
                 'visit_times': [],
                 'first_seen': event_time,
@@ -126,12 +178,18 @@ class AmplitudeSyncService:
         daily.first_seen = min(filter(None, [daily.first_seen, event_time]))
         daily.last_seen = max(filter(None, [daily.last_seen, event_time]))
 
-        if not daily.phone_number and phone_number:
+        if self._is_missing_text(daily.phone_number) and phone_number:
             daily.phone_number = phone_number
-        if not daily.user_id and user_id:
+        if self._is_missing_text(daily.user_id) and user_id:
             daily.user_id = user_id
-        if not daily.platform and platform:
+        if self._is_missing_text(daily.platform) and platform:
             daily.platform = platform
+        if self._is_missing_text(daily.device_brand) and device_brand:
+            daily.device_brand = device_brand
+        if self._is_missing_text(daily.device_manufacturer) and device_manufacturer:
+            daily.device_manufacturer = device_manufacturer
+        if self._is_missing_text(daily.device_model) and device_model:
+            daily.device_model = device_model
 
         daily.save(
             update_fields=[
@@ -142,18 +200,40 @@ class AmplitudeSyncService:
                 'phone_number',
                 'user_id',
                 'platform',
+                'device_brand',
+                'device_manufacturer',
+                'device_model',
                 'updated_at',
             ]
+        )
+
+    def _extract_device_metadata(self, event: dict) -> tuple[str, str, str]:
+        return (
+            self._clean_text(event.get('device_brand')),
+            self._clean_text(event.get('device_manufacturer')),
+            self._clean_text(event.get('device_model')),
         )
 
     def _extract_phone_number(self, event: dict) -> str:
         containers = [event, event.get('user_properties') or {}, event.get('event_properties') or {}]
         for container in containers:
             for key in self.phone_candidate_keys:
-                value = container.get(key)
-                if value:
-                    return str(value)
+                cleaned = self._clean_text(container.get(key))
+                if cleaned:
+                    return cleaned
         return ''
+
+    def _clean_text(self, value) -> str:
+        if value is None:
+            return ''
+
+        text = str(value).strip()
+        if text.lower() in self.missing_markers:
+            return ''
+        return text
+
+    def _is_missing_text(self, value: str) -> bool:
+        return self._clean_text(value) == ''
 
     def _extract_event_time(self, event: dict):
         milliseconds = event.get('time')

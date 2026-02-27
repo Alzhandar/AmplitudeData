@@ -38,16 +38,19 @@ class AmplitudeExportClient:
             with zipfile.ZipFile(BytesIO(content)) as archive:
                 for filename in archive.namelist():
                     with archive.open(filename) as file_handle:
-                        for line in file_handle:
-                            line = line.decode('utf-8').strip()
-                            if line:
-                                yield json.loads(line)
+                        payload = file_handle.read()
+                        for line in self._iter_json_lines(payload):
+                            yield json.loads(line)
             return
 
-        if content[:2] == b'\x1f\x8b':
-            content = gzip.decompress(content)
+        for line in self._iter_json_lines(content):
+            yield json.loads(line)
 
-        for line in content.decode('utf-8').splitlines():
-            line = line.strip()
+    def _iter_json_lines(self, payload: bytes) -> Iterator[str]:
+        if payload[:2] == b'\x1f\x8b':
+            payload = gzip.decompress(payload)
+
+        for raw_line in payload.splitlines():
+            line = raw_line.decode('utf-8').strip()
             if line:
-                yield json.loads(line)
+                yield line

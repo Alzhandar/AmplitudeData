@@ -9,16 +9,37 @@ admin.site.index_title = 'Управление системой'
 
 @admin.register(MobileSession)
 class MobileSessionAdmin(admin.ModelAdmin):
-    list_display = ('event_time', 'event_type', 'user_id', 'device_id', 'phone_number', 'platform')
+    list_display = (
+        'event_time',
+        'event_type',
+        'user_id',
+        'device_id',
+        'phone_number',
+        'platform',
+        'device_brand',
+        'device_manufacturer',
+        'device_model',
+    )
     list_filter = ('date', 'platform', 'event_type')
-    search_fields = ('user_id', 'device_id', 'phone_number', 'insert_id')
+    search_fields = ('user_id', 'device_id', 'phone_number', 'insert_id', 'device_brand', 'device_model')
 
 
 @admin.register(DailyDeviceActivity)
 class DailyDeviceActivityAdmin(admin.ModelAdmin):
-    list_display = ('date', 'device_id', 'phone_number', 'platform', 'visits_count', 'first_seen', 'last_seen')
+    list_display = (
+        'date',
+        'device_id',
+        'phone_number',
+        'platform',
+        'device_brand',
+        'device_manufacturer',
+        'device_model',
+        'visits_count',
+        'first_seen',
+        'last_seen',
+    )
     list_filter = ('date', 'platform')
-    search_fields = ('user_id', 'device_id', 'phone_number')
+    search_fields = ('user_id', 'device_id', 'phone_number', 'device_brand', 'device_model')
 
 
 @admin.register(AmplitudeSyncSchedule)
