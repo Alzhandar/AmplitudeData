@@ -37,7 +37,6 @@ class DailyDeviceActivity(models.Model):
     visits_count = models.PositiveIntegerField(default=0, verbose_name='Количество визитов')
     first_seen = models.DateTimeField(null=True, blank=True, verbose_name='Первый визит')
     last_seen = models.DateTimeField(null=True, blank=True, verbose_name='Последний визит')
-    visit_times = models.JSONField(default=list, blank=True, verbose_name='Времена визитов')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновлено')
 
     class Meta:
@@ -47,6 +46,25 @@ class DailyDeviceActivity(models.Model):
         ordering = ('-last_seen',)
         verbose_name = 'Дневная активность устройства'
         verbose_name_plural = 'Дневная активность устройств'
+
+
+class DeviceVisitTime(models.Model):
+    daily_activity = models.ForeignKey(
+        DailyDeviceActivity,
+        on_delete=models.CASCADE,
+        related_name='visit_records',
+        verbose_name='Дневная активность',
+    )
+    event_time = models.DateTimeField(db_index=True, verbose_name='Время визита')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создано')
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=('daily_activity', 'event_time'), name='uniq_visit_time_per_activity'),
+        ]
+        ordering = ('event_time',)
+        verbose_name = 'Время визита устройства'
+        verbose_name_plural = 'Времена визитов устройств'
 
 
 class AmplitudeSyncSchedule(models.Model):

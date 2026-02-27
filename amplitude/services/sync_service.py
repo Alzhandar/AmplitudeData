@@ -7,7 +7,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from amplitude.models import DailyDeviceActivity, MobileSession
+from amplitude.models import DailyDeviceActivity, DeviceVisitTime, MobileSession
 from utils.amplitude_client import AmplitudeExportClient
 
 
@@ -161,22 +161,24 @@ class AmplitudeSyncService:
                 'device_manufacturer': device_manufacturer,
                 'device_model': device_model,
                 'visits_count': 0,
-                'visit_times': [],
                 'first_seen': event_time,
                 'last_seen': event_time,
             },
         )
 
-        visit_time_iso = event_time.isoformat()
-        visit_times = list(daily.visit_times or [])
-        if visit_time_iso not in visit_times:
-            visit_times.append(visit_time_iso)
-            visit_times.sort()
+        DeviceVisitTime.objects.get_or_create(
+            daily_activity=daily,
+            event_time=event_time,
+        )
 
-        daily.visits_count = len(visit_times)
-        daily.visit_times = visit_times
-        daily.first_seen = min(filter(None, [daily.first_seen, event_time]))
-        daily.last_seen = max(filter(None, [daily.last_seen, event_time]))
+        visit_datetimes = list(
+            daily.visit_records.order_by('event_time').values_list('event_time', flat=True)
+        )
+        daily.visits_count = len(visit_datetimes)
+
+        if visit_datetimes:
+            daily.first_seen = visit_datetimes[0]
+            daily.last_seen = visit_datetimes[-1]
 
         if self._is_missing_text(daily.phone_number) and phone_number:
             daily.phone_number = phone_number
@@ -194,7 +196,6 @@ class AmplitudeSyncService:
         daily.save(
             update_fields=[
                 'visits_count',
-                'visit_times',
                 'first_seen',
                 'last_seen',
                 'phone_number',

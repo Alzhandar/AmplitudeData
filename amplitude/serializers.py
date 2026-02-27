@@ -4,6 +4,8 @@ from .models import DailyDeviceActivity
 
 
 class DailyDeviceActivitySerializer(serializers.ModelSerializer):
+    visit_times = serializers.SerializerMethodField()
+
     class Meta:
         model = DailyDeviceActivity
         fields = (
@@ -20,3 +22,9 @@ class DailyDeviceActivitySerializer(serializers.ModelSerializer):
             'first_seen',
             'last_seen',
         )
+
+    def get_visit_times(self, obj):
+        return [
+            visit_time.isoformat()
+            for visit_time in obj.visit_records.order_by('event_time').values_list('event_time', flat=True)
+        ]

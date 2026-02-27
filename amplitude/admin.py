@@ -1,7 +1,10 @@
 from django.contrib import admin
+from django.urls import reverse
+from django.utils.http import urlencode
+from django.utils.html import format_html
 
 from .common import AmplitudeEventTranslations
-from .models import AmplitudeSyncSchedule, DailyDeviceActivity, MobileSession
+from .models import AmplitudeSyncSchedule, DailyDeviceActivity, DeviceVisitTime, MobileSession
 
 admin.site.site_header = 'Панель администратора'
 admin.site.site_title = 'Админка'
@@ -120,6 +123,15 @@ class MobileSessionAdmin(admin.ModelAdmin):
         return AmplitudeEventTranslations.translate(obj.event_type)
 
 
+class DeviceVisitTimeInline(admin.TabularInline):
+    model = DeviceVisitTime
+    extra = 0
+    fields = ('event_time', 'created_at')
+    readonly_fields = ('event_time', 'created_at')
+    can_delete = False
+    ordering = ('-event_time',)
+
+
 @admin.register(DailyDeviceActivity)
 class DailyDeviceActivityAdmin(admin.ModelAdmin):
     list_display = (
@@ -131,11 +143,27 @@ class DailyDeviceActivityAdmin(admin.ModelAdmin):
         'device_manufacturer',
         'device_model',
         'visits_count',
+        'device_visit_times_link',
         'first_seen',
         'last_seen',
     )
     list_filter = ('date', 'platform', HasDeviceFilter, HasUserFilter)
     search_fields = ('user_id', 'device_id', 'phone_number', 'device_brand', 'device_model')
+    inlines = (DeviceVisitTimeInline,)
+
+    @admin.display(description='ВРЕМЕНА ВИЗИТОВ УСТРОЙСТВ')
+    def device_visit_times_link(self, obj):
+        base_url = reverse('admin:amplitude_devicevisittime_changelist')
+        query_string = urlencode({'daily_activity__id__exact': obj.id})
+        url = f'{base_url}?{query_string}'
+        return format_html('<a href="{}">Открыть</a>', url)
+
+
+@admin.register(DeviceVisitTime)
+class DeviceVisitTimeAdmin(admin.ModelAdmin):
+    list_display = ('daily_activity', 'event_time', 'created_at')
+    list_filter = ('daily_activity__date', 'event_time')
+    search_fields = ('daily_activity__device_id',)
 
 
 @admin.register(AmplitudeSyncSchedule)
