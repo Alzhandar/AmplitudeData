@@ -38,3 +38,7 @@ Returns aggregated records for the current day:
 - `phone_number`
 - list of visit times (`visit_times`)
 - `first_seen`, `last_seen`, `visits_count`
+
+## Frontend (Next.js)
+
+- See frontend integration documentation: `docs/FRONTEND_NEXTJS.md`

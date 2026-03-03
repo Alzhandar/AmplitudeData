@@ -12,19 +12,24 @@ class LocationPresenceAnalyticsService:
     def __init__(self, avatariya_client: Optional[AvatariyaClient] = None) -> None:
         self.avatariya_client = avatariya_client or AvatariyaClient()
 
-    def calculate(self, date_value: date, window_hours: int = 24) -> Dict:
+    def calculate(self, start_date: date, end_date: date, window_hours: int = 24) -> Dict:
         if window_hours <= 0:
             raise ValueError('window_hours must be greater than 0')
+        if start_date > end_date:
+            raise ValueError('start_date must be <= end_date')
 
-        daily_rows = DailyDeviceActivity.objects.filter(date=date_value).only('id', 'user_id', 'device_id', 'phone_number')
+        daily_rows = DailyDeviceActivity.objects.filter(
+            date__range=(start_date, end_date),
+        ).only('id', 'user_id', 'device_id', 'phone_number')
 
         users_without_phone = self._count_users_without_phone(daily_rows)
-        phone_to_app_times = self._build_phone_to_app_times(date_value)
+        phone_to_app_times = self._build_phone_to_app_times(start_date, end_date)
 
         phones = sorted(phone_to_app_times.keys())
         if not phones:
             return {
-                'date': date_value.isoformat(),
+                'start_date': start_date.isoformat(),
+                'end_date': end_date.isoformat(),
                 'window_hours': window_hours,
                 'unique_users_total': users_without_phone,
                 'users_with_phone': 0,
@@ -36,7 +41,8 @@ class LocationPresenceAnalyticsService:
             }
 
         visit_rows = self.avatariya_client.visit_search_all_by_date_phones(
-            date=date_value.isoformat(),
+            start_date=start_date.isoformat(),
+            end_date=end_date.isoformat(),
             phones=phones,
         )
         phone_to_visit_times = self._build_phone_to_visit_times(visit_rows)
@@ -54,7 +60,8 @@ class LocationPresenceAnalyticsService:
         not_in_location_users = users_with_phone - in_location_users
 
         return {
-            'date': date_value.isoformat(),
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat(),
             'window_hours': window_hours,
             'unique_users_total': users_with_phone + users_without_phone,
             'users_with_phone': users_with_phone,
@@ -73,11 +80,11 @@ class LocationPresenceAnalyticsService:
             unique_keys.add(self._build_user_key(row.user_id, row.device_id, row.id))
         return len(unique_keys)
 
-    def _build_phone_to_app_times(self, date_value: date) -> Dict[str, List]:
+    def _build_phone_to_app_times(self, start_date: date, end_date: date) -> Dict[str, List]:
         mapping: Dict[str, List] = defaultdict(list)
 
         rows = DeviceVisitTime.objects.filter(
-            daily_activity__date=date_value,
+            daily_activity__date__range=(start_date, end_date),
         ).values_list('daily_activity__phone_number', 'event_time')
 
         for phone, event_time in rows:

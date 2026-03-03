@@ -18,12 +18,13 @@ class AvatariyaClient:
         self.timeout_seconds = timeout_seconds or settings.AVATARIYA_TIMEOUT_SECONDS
         self.phones_batch_size = phones_batch_size or settings.AVATARIYA_PHONES_BATCH_SIZE
 
-    def visit_search_by_date_phones(self, date: str, phones: List[str]) -> Dict:
+    def visit_search_by_date_phones(self, start_date: str, end_date: str, phones: List[str]) -> Dict:
         if not self.bearer_token:
             raise ValueError('AVATARIYA_BEARER_TOKEN must be set')
 
         payload = {
-            'date': date,
+            'start_date': start_date,
+            'end_date': end_date,
             'phones': phones,
         }
 
@@ -42,14 +43,14 @@ class AvatariyaClient:
             raise ValueError('Avatariya API request failed') from exc
         return response.json()
 
-    def visit_search_all_by_date_phones(self, date: str, phones: List[str]) -> List[Dict]:
+    def visit_search_all_by_date_phones(self, start_date: str, end_date: str, phones: List[str]) -> List[Dict]:
         unique_phones = list(dict.fromkeys(phones))
         if not unique_phones:
             return []
 
         results: List[Dict] = []
         for phone_chunk in self._chunked(unique_phones, self.phones_batch_size):
-            data = self.visit_search_by_date_phones(date=date, phones=phone_chunk)
+            data = self.visit_search_by_date_phones(start_date=start_date, end_date=end_date, phones=phone_chunk)
             results.extend(self._collect_results_with_pagination(data))
 
         return results

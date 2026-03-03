@@ -19,6 +19,7 @@ wait_for_host_port "redis" "6379" "Redis"
 mode="${1:-web}"
 
 if [ "$mode" = "web" ]; then
+  python manage.py migrate --noinput
   exec python manage.py runserver 0.0.0.0:8000
 elif [ "$mode" = "celery" ]; then
   exec celery -A core worker -l info

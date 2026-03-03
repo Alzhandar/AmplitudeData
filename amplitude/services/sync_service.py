@@ -1,5 +1,5 @@
 import hashlib
-from datetime import datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import Iterable, Optional
 
 from django.conf import settings
@@ -43,6 +43,48 @@ class AmplitudeSyncService:
             'processed': processed,
             'inserted': inserted,
             'date': now.date().isoformat(),
+        }
+
+    def sync_date_range(self, start_date: date, end_date: date) -> dict:
+        """Синхронизировать все дни в диапазоне [start_date, end_date] включительно."""
+        current_tz = timezone.get_current_timezone()
+        today = timezone.localdate()
+
+        total_processed = 0
+        total_inserted = 0
+        days_synced = []
+
+        current = start_date
+        while current <= end_date:
+            day_start = timezone.make_aware(datetime.combine(current, time.min), current_tz)
+            # Для сегодняшнего дня берём текущий момент, для прошлых — конец дня
+            if current == today:
+                day_end = timezone.localtime(timezone.now())
+            else:
+                day_end = timezone.make_aware(datetime.combine(current, time.max), current_tz)
+
+            day_processed = 0
+            day_inserted = 0
+            for event in self.client.fetch_events(start=day_start, end=day_end):
+                day_processed += 1
+                day_inserted += self._process_event(event, current)
+
+            total_processed += day_processed
+            total_inserted += day_inserted
+            days_synced.append({
+                'date': current.isoformat(),
+                'processed': day_processed,
+                'inserted': day_inserted,
+            })
+
+            current += timedelta(days=1)
+
+        return {
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat(),
+            'total_processed': total_processed,
+            'total_inserted': total_inserted,
+            'days': days_synced,
         }
 
     def _process_event(self, event: dict, target_date) -> int:
