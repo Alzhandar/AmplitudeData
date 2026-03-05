@@ -1,4 +1,5 @@
 import hashlib
+import time as time_module
 from datetime import date, datetime, time, timedelta
 from typing import Iterable, Optional
 
@@ -45,7 +46,7 @@ class AmplitudeSyncService:
             'date': now.date().isoformat(),
         }
 
-    def sync_date_range(self, start_date: date, end_date: date) -> dict:
+    def sync_date_range(self, start_date: date, end_date: date, max_retries: int = 3) -> dict:
         """Синхронизировать все дни в диапазоне [start_date, end_date] включительно."""
         current_tz = timezone.get_current_timezone()
         today = timezone.localdate()
@@ -57,7 +58,6 @@ class AmplitudeSyncService:
         current = start_date
         while current <= end_date:
             day_start = timezone.make_aware(datetime.combine(current, time.min), current_tz)
-            # Для сегодняшнего дня берём текущий момент, для прошлых — конец дня
             if current == today:
                 day_end = timezone.localtime(timezone.now())
             else:
@@ -65,18 +65,31 @@ class AmplitudeSyncService:
 
             day_processed = 0
             day_inserted = 0
-            for event in self.client.fetch_events(start=day_start, end=day_end):
-                day_processed += 1
-                day_inserted += self._process_event(event, current)
+            last_error = None
 
-            total_processed += day_processed
-            total_inserted += day_inserted
+            for attempt in range(1, max_retries + 1):
+                try:
+                    day_processed = 0
+                    day_inserted = 0
+                    for event in self.client.fetch_events(start=day_start, end=day_end):
+                        day_processed += 1
+                        day_inserted += self._process_event(event, current)
+                    last_error = None
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    if attempt < max_retries:
+                        time_module.sleep(5 * attempt)  # 5s, 10s между попытками
+
             days_synced.append({
                 'date': current.isoformat(),
                 'processed': day_processed,
                 'inserted': day_inserted,
+                'error': str(last_error) if last_error else None,
             })
 
+            total_processed += day_processed
+            total_inserted += day_inserted
             current += timedelta(days=1)
 
         return {

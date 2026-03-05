@@ -76,3 +76,24 @@ class AmplitudeSyncSchedule(models.Model):
 
     def __str__(self) -> str:
         return f'Hourly sync (enabled={self.enabled})'
+
+
+class BigDataVisit(models.Model):
+    bigdata_visit_id = models.CharField(max_length=128, unique=True, db_index=True, verbose_name='ID визита BigData')
+    guest_phone_raw = models.CharField(max_length=64, blank=True, verbose_name='Телефон (raw)')
+    guest_phone_normalized = models.CharField(max_length=64, db_index=True, blank=True, verbose_name='Телефон (normalized)')
+    time_create = models.DateTimeField(db_index=True, verbose_name='Время визита')
+    payload = models.JSONField(default=dict, blank=True, verbose_name='Сырой ответ BigData')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создано')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновлено')
+
+    class Meta:
+        ordering = ('-time_create',)
+        indexes = [
+            models.Index(fields=('guest_phone_normalized', 'time_create'), name='idx_bigdata_phone_time'),
+        ]
+        verbose_name = 'Визит BigData'
+        verbose_name_plural = 'Визиты BigData'
+
+    def __str__(self) -> str:
+        return f'{self.bigdata_visit_id} | {self.guest_phone_normalized} | {self.time_create}'

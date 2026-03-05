@@ -2,15 +2,15 @@ from collections import defaultdict
 from datetime import date
 from typing import Dict, Iterable, List, Optional
 
-from django.utils.dateparse import parse_datetime
-
 from amplitude.models import DailyDeviceActivity, DeviceVisitTime
+from amplitude.services.bigdata_visit_service import BigDataVisitSyncService
 from utils.avatariya_client import AvatariyaClient
 
 
 class LocationPresenceAnalyticsService:
-    def __init__(self, avatariya_client: Optional[AvatariyaClient] = None) -> None:
+    def __init__(self, avatariya_client: Optional[AvatariyaClient] = None, bigdata_visit_service: Optional[BigDataVisitSyncService] = None) -> None:
         self.avatariya_client = avatariya_client or AvatariyaClient()
+        self.bigdata_visit_service = bigdata_visit_service or BigDataVisitSyncService(avatariya_client=self.avatariya_client)
 
     def calculate(self, start_date: date, end_date: date, window_hours: int = 24) -> Dict:
         if window_hours <= 0:
@@ -40,12 +40,16 @@ class LocationPresenceAnalyticsService:
                 'matched_visit_records': 0,
             }
 
-        visit_rows = self.avatariya_client.visit_search_all_by_date_phones(
-            start_date=start_date.isoformat(),
-            end_date=end_date.isoformat(),
+        self.bigdata_visit_service.sync_visits(
+            start_date=start_date,
+            end_date=end_date,
             phones=phones,
         )
-        phone_to_visit_times = self._build_phone_to_visit_times(visit_rows)
+        phone_to_visit_times, visits_total = self.bigdata_visit_service.build_phone_to_visit_times(
+            start_date=start_date,
+            end_date=end_date,
+            phones=phones,
+        )
 
         in_location_users = 0
         matched_visit_records = 0
@@ -68,7 +72,7 @@ class LocationPresenceAnalyticsService:
             'users_without_phone': users_without_phone,
             'in_location_users': in_location_users,
             'not_in_location_users': not_in_location_users,
-            'visit_records_total': len(visit_rows),
+            'visit_records_total': visits_total,
             'matched_visit_records': matched_visit_records,
         }
 
@@ -92,25 +96,6 @@ class LocationPresenceAnalyticsService:
             if not normalized_phone:
                 continue
             mapping[normalized_phone].append(event_time)
-
-        for phone in mapping:
-            mapping[phone].sort()
-
-        return mapping
-
-    def _build_phone_to_visit_times(self, visit_rows: List[Dict]) -> Dict[str, List]:
-        mapping: Dict[str, List] = defaultdict(list)
-
-        for row in visit_rows:
-            normalized_phone = self._normalize_phone(row.get('guest_phone'))
-            if not normalized_phone:
-                continue
-
-            visit_time = parse_datetime(row.get('time_create', ''))
-            if visit_time is None:
-                continue
-
-            mapping[normalized_phone].append(visit_time)
 
         for phone in mapping:
             mapping[phone].sort()

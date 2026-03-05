@@ -30,9 +30,14 @@ class Command(BaseCommand):
         result = service.sync_date_range(start_date=start_date, end_date=end_date)
 
         for day in result['days']:
-            self.stdout.write(
-                f"  {day['date']}: обработано={day['processed']}, вставлено={day['inserted']}"
-            )
+            if day.get('error'):
+                self.stdout.write(
+                    self.style.ERROR(f"  {day['date']}: ОШИБКА — {day['error']}")
+                )
+            else:
+                self.stdout.write(
+                    f"  {day['date']}: обработано={day['processed']}, вставлено={day['inserted']}"
+                )
 
         self.stdout.write(self.style.SUCCESS(
             f"\nИтого: обработано={result['total_processed']}, вставлено={result['total_inserted']}"

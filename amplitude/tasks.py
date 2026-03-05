@@ -2,7 +2,8 @@ from celery import shared_task
 from django.db import transaction
 from django.utils import timezone
 
-from amplitude.models import AmplitudeSyncSchedule
+from amplitude.models import AmplitudeSyncSchedule, DailyDeviceActivity
+from amplitude.services.bigdata_visit_service import BigDataVisitSyncService
 from amplitude.services.sync_service import AmplitudeSyncService
 
 
@@ -29,6 +30,18 @@ def run_scheduled_sync(self):
             return {'status': 'skipped', 'reason': 'already_ran_this_hour', 'hour': current_hour_start.isoformat()}
 
         result = AmplitudeSyncService().sync_today_mobile_events()
+        today = timezone.localdate()
+        phones = list(
+            DailyDeviceActivity.objects.filter(date=today)
+            .exclude(phone_number='')
+            .values_list('phone_number', flat=True)
+            .distinct()
+        )
+        bigdata_result = BigDataVisitSyncService().sync_visits(
+            start_date=today,
+            end_date=today,
+            phones=phones,
+        )
         schedule.last_run_at = now
         schedule.save(update_fields=['last_run_at', 'updated_at'])
-        return {'status': 'ok', 'result': result}
+        return {'status': 'ok', 'result': result, 'bigdata': bigdata_result}
