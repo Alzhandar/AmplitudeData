@@ -21,6 +21,13 @@ mode="${1:-web}"
 if [ "$mode" = "web" ]; then
   python manage.py migrate --noinput
   exec python manage.py runserver 0.0.0.0:8000
+elif [ "$mode" = "web-prod" ]; then
+  python manage.py migrate --noinput
+  python manage.py collectstatic --noinput
+  exec gunicorn core.wsgi:application \
+    --bind 0.0.0.0:8000 \
+    --workers "${GUNICORN_WORKERS:-3}" \
+    --timeout "${GUNICORN_TIMEOUT:-120}"
 elif [ "$mode" = "celery" ]; then
   exec celery -A core worker -l info
 elif [ "$mode" = "beat" ]; then

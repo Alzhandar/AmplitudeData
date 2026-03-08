@@ -1,0 +1,81 @@
+name: amplitude_backend_prod
+
+services:
+  web:
+    build: .
+    command: sh /app/entrypoint.sh web-prod
+    env_file:
+      - .env
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - static_data:/app/staticfiles
+
+  celery:
+    build: .
+    command: sh /app/entrypoint.sh celery
+    env_file:
+      - .env
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+
+  celery-beat:
+    build: .
+    command: sh /app/entrypoint.sh beat
+    env_file:
+      - .env
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:14
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    command: ["/bin/sh", "/docker-entrypoint.d/99-render-conf.sh"]
+    env_file:
+      - .env
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: unless-stopped
+    volumes:
+      - static_data:/static:ro
+      - certbot_www:/var/www/certbot
+      - certbot_etc:/etc/letsencrypt
+      - ./docker/nginx/render-conf.sh:/docker-entrypoint.d/99-render-conf.sh:ro
+      - ./docker/nginx/templates:/etc/nginx/templates:ro
+
+  certbot:
+    image: certbot/certbot:latest
+    env_file:
+      - .env
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_etc:/etc/letsencrypt
+    entrypoint: /bin/sh
+    command: -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  static_data:
+  certbot_www:
+  certbot_etc:
