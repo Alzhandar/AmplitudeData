@@ -124,8 +124,12 @@ class MobileSessionAdmin(admin.ModelAdmin):
         'device_manufacturer',
         'device_model',
     )
-    list_filter = ('date', 'platform', EventTypeRuFilter, HasEventTypeFilter, HasDeviceFilter, HasUserFilter)
+    # Avoid heavy dynamic distinct lookups on very large tables.
+    list_filter = ('date', 'platform', HasEventTypeFilter, HasDeviceFilter, HasUserFilter)
     search_fields = ('user_id', 'device_id', 'phone_number', 'insert_id', 'device_brand', 'device_model')
+    ordering = ('-event_time',)
+    list_per_page = 50
+    show_full_result_count = False
 
     @admin.display(description='Событие (рус.)')
     def event_type_ru(self, obj):

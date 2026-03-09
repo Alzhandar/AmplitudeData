@@ -34,6 +34,7 @@ class LocationPresenceStatsViewSet(viewsets.ViewSet):
         raw_start = request.query_params.get('start_date') or request.query_params.get('date') or today
         raw_end = request.query_params.get('end_date') or raw_start
         raw_window_hours = request.query_params.get('window_hours') or '24'
+        raw_sync = (request.query_params.get('sync') or '0').strip().lower()
 
         try:
             start_date = datetime.strptime(raw_start, '%Y-%m-%d').date()
@@ -50,9 +51,16 @@ class LocationPresenceStatsViewSet(viewsets.ViewSet):
         except ValueError as exc:
             raise ValidationError({'window_hours': 'Must be integer'}) from exc
 
+        auto_sync = raw_sync in {'1', 'true', 'yes'}
+
         service = LocationPresenceAnalyticsService()
         try:
-            result = service.calculate(start_date=start_date, end_date=end_date, window_hours=window_hours)
+            result = service.calculate(
+                start_date=start_date,
+                end_date=end_date,
+                window_hours=window_hours,
+                auto_sync=auto_sync,
+            )
         except ValueError as exc:
             raise ValidationError({'detail': str(exc)}) from exc
 

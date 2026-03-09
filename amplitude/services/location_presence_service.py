@@ -12,7 +12,7 @@ class LocationPresenceAnalyticsService:
         self.avatariya_client = avatariya_client or AvatariyaClient()
         self.bigdata_visit_service = bigdata_visit_service or BigDataVisitSyncService(avatariya_client=self.avatariya_client)
 
-    def calculate(self, start_date: date, end_date: date, window_hours: int = 24) -> Dict:
+    def calculate(self, start_date: date, end_date: date, window_hours: int = 24, auto_sync: bool = False) -> Dict:
         if window_hours <= 0:
             raise ValueError('window_hours must be greater than 0')
         if start_date > end_date:
@@ -40,11 +40,12 @@ class LocationPresenceAnalyticsService:
                 'matched_visit_records': 0,
             }
 
-        self.bigdata_visit_service.sync_visits(
-            start_date=start_date,
-            end_date=end_date,
-            phones=phones,
-        )
+        if auto_sync:
+            self.bigdata_visit_service.sync_visits(
+                start_date=start_date,
+                end_date=end_date,
+                phones=phones,
+            )
         phone_to_visit_times, visits_total = self.bigdata_visit_service.build_phone_to_visit_times(
             start_date=start_date,
             end_date=end_date,
