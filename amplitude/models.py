@@ -147,3 +147,26 @@ class UserEmployeeBinding(models.Model):
 
     def __str__(self) -> str:
         return f'{self.user.username} -> {self.iin}'
+
+
+class LocationPresenceStatsCache(models.Model):
+    start_date = models.DateField(db_index=True, verbose_name='Начальная дата')
+    end_date = models.DateField(db_index=True, verbose_name='Конечная дата')
+    window_hours = models.PositiveIntegerField(default=24, db_index=True, verbose_name='Окно, часы')
+    payload = models.JSONField(default=dict, blank=True, verbose_name='Результат расчета')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создано')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновлено')
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=('start_date', 'end_date', 'window_hours'),
+                name='uniq_location_presence_stats_cache_key',
+            ),
+        ]
+        ordering = ('-updated_at',)
+        verbose_name = 'Кэш статистики присутствия'
+        verbose_name_plural = 'Кэш статистики присутствия'
+
+    def __str__(self) -> str:
+        return f'{self.start_date}..{self.end_date} ({self.window_hours}h)'

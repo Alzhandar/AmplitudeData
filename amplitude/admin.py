@@ -11,6 +11,7 @@ from .models import (
     BigDataVisit,
     DailyDeviceActivity,
     DeviceVisitTime,
+    LocationPresenceStatsCache,
     MobileSession,
     UserEmployeeBinding,
 )
@@ -217,3 +218,10 @@ class AllowedEmployeePositionAdmin(admin.ModelAdmin):
 class UserEmployeeBindingAdmin(admin.ModelAdmin):
     list_display = ('user', 'iin', 'updated_at')
     search_fields = ('user__username', 'iin')
+
+
+@admin.register(LocationPresenceStatsCache)
+class LocationPresenceStatsCacheAdmin(admin.ModelAdmin):
+    list_display = ('start_date', 'end_date', 'window_hours', 'updated_at')
+    list_filter = ('window_hours', 'start_date', 'end_date')
+    search_fields = ('start_date', 'end_date')

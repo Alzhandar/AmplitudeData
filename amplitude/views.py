@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
-from .models import DailyDeviceActivity, UserEmployeeBinding
+from .models import DailyDeviceActivity, LocationPresenceStatsCache, UserEmployeeBinding
 from .services.employee_access_service import EmployeeAccessService
 from .services.location_presence_service import LocationPresenceAnalyticsService
 from .serializers import DailyDeviceActivitySerializer
@@ -28,6 +28,7 @@ class DailyDeviceActivityViewSet(viewsets.ReadOnlyModelViewSet):
 
 class LocationPresenceStatsViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
+    max_sync_range_days = 3
 
     def list(self, request):
         today = timezone.localdate().isoformat()
@@ -35,6 +36,7 @@ class LocationPresenceStatsViewSet(viewsets.ViewSet):
         raw_end = request.query_params.get('end_date') or raw_start
         raw_window_hours = request.query_params.get('window_hours') or '24'
         raw_sync = (request.query_params.get('sync') or '0').strip().lower()
+        raw_refresh = (request.query_params.get('refresh') or '0').strip().lower()
 
         try:
             start_date = datetime.strptime(raw_start, '%Y-%m-%d').date()
@@ -52,6 +54,30 @@ class LocationPresenceStatsViewSet(viewsets.ViewSet):
             raise ValidationError({'window_hours': 'Must be integer'}) from exc
 
         auto_sync = raw_sync in {'1', 'true', 'yes'}
+        force_refresh = raw_refresh in {'1', 'true', 'yes'}
+        range_days = (end_date - start_date).days + 1
+
+        cache_row = LocationPresenceStatsCache.objects.filter(
+            start_date=start_date,
+            end_date=end_date,
+            window_hours=window_hours,
+        ).first()
+
+        if cache_row and not force_refresh:
+            payload = dict(cache_row.payload or {})
+            payload['cached'] = True
+            payload['cached_at'] = cache_row.updated_at.isoformat()
+            return Response(payload)
+
+        if auto_sync and range_days > self.max_sync_range_days:
+            raise ValidationError(
+                {
+                    'detail': (
+                        f'sync=1 is allowed only up to {self.max_sync_range_days} days '
+                        f'(requested: {range_days})'
+                    )
+                }
+            )
 
         service = LocationPresenceAnalyticsService()
         try:
@@ -63,6 +89,16 @@ class LocationPresenceStatsViewSet(viewsets.ViewSet):
             )
         except ValueError as exc:
             raise ValidationError({'detail': str(exc)}) from exc
+
+        LocationPresenceStatsCache.objects.update_or_create(
+            start_date=start_date,
+            end_date=end_date,
+            window_hours=window_hours,
+            defaults={'payload': result},
+        )
+
+        result = dict(result)
+        result['cached'] = False
 
         return Response(result)
 
