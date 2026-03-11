@@ -135,7 +135,6 @@ class AmplitudeSyncService:
                     'device_manufacturer': device_manufacturer,
                     'device_model': device_model,
                     'insert_id': insert_id,
-                    'raw_event': event,
                 },
             )
 

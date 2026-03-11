@@ -14,7 +14,6 @@ class MobileSession(models.Model):
     device_model = models.CharField(max_length=128, blank=True, verbose_name='Модель устройства')
     insert_id = models.CharField(max_length=255, blank=True, verbose_name='Insert ID')
     dedupe_key = models.CharField(max_length=64, unique=True, verbose_name='Ключ дедупликации')
-    raw_event = models.JSONField(default=dict, blank=True, verbose_name='Сырое событие')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создано')
 
     class Meta:
