@@ -8,7 +8,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from amplitude.models import DailyDeviceActivity, DeviceVisitTime, MobileSession
+from amplitude.models import DailyDeviceActivity, DeviceVisitTime
 from utils.amplitude_client import AmplitudeExportClient
 
 
@@ -121,34 +121,7 @@ class AmplitudeSyncService:
         dedupe_key = self._build_dedupe_key(event, event_time)
 
         with transaction.atomic():
-            session, created = MobileSession.objects.get_or_create(
-                dedupe_key=dedupe_key,
-                defaults={
-                    'date': event_time.date(),
-                    'event_time': event_time,
-                    'event_type': event_type,
-                    'user_id': user_id,
-                    'device_id': device_id,
-                    'phone_number': phone_number,
-                    'platform': platform,
-                    'device_brand': device_brand,
-                    'device_manufacturer': device_manufacturer,
-                    'device_model': device_model,
-                    'insert_id': insert_id,
-                },
-            )
-
-            if not created:
-                self._update_session_metadata(
-                    session=session,
-                    phone_number=phone_number,
-                    platform=platform,
-                    device_brand=device_brand,
-                    device_manufacturer=device_manufacturer,
-                    device_model=device_model,
-                )
-
-            self._upsert_daily_activity(
+            visit_created = self._upsert_daily_activity(
                 date_value=event_time.date(),
                 event_time=event_time,
                 device_id=device_id,
@@ -160,37 +133,7 @@ class AmplitudeSyncService:
                 device_model=device_model,
             )
 
-        return 1 if created else 0
-
-    def _update_session_metadata(
-        self,
-        session: MobileSession,
-        phone_number: str,
-        platform: str,
-        device_brand: str,
-        device_manufacturer: str,
-        device_model: str,
-    ) -> None:
-        fields_to_update = []
-
-        if self._is_missing_text(session.phone_number) and phone_number:
-            session.phone_number = phone_number
-            fields_to_update.append('phone_number')
-        if self._is_missing_text(session.platform) and platform:
-            session.platform = platform
-            fields_to_update.append('platform')
-        if self._is_missing_text(session.device_brand) and device_brand:
-            session.device_brand = device_brand
-            fields_to_update.append('device_brand')
-        if self._is_missing_text(session.device_manufacturer) and device_manufacturer:
-            session.device_manufacturer = device_manufacturer
-            fields_to_update.append('device_manufacturer')
-        if self._is_missing_text(session.device_model) and device_model:
-            session.device_model = device_model
-            fields_to_update.append('device_model')
-
-        if fields_to_update:
-            session.save(update_fields=fields_to_update)
+        return 1 if visit_created else 0
 
     def _upsert_daily_activity(
         self,
@@ -203,7 +146,7 @@ class AmplitudeSyncService:
         device_brand: str,
         device_manufacturer: str,
         device_model: str,
-    ) -> None:
+    ) -> bool:
         daily, _ = DailyDeviceActivity.objects.get_or_create(
             date=date_value,
             device_id=device_id,
@@ -220,7 +163,7 @@ class AmplitudeSyncService:
             },
         )
 
-        DeviceVisitTime.objects.get_or_create(
+        _, visit_created = DeviceVisitTime.objects.get_or_create(
             daily_activity=daily,
             event_time=event_time,
         )
@@ -261,6 +204,8 @@ class AmplitudeSyncService:
                 'updated_at',
             ]
         )
+
+        return visit_created
 
     def _extract_device_metadata(self, event: dict) -> tuple[str, str, str]:
         device_brand = self._clean_text(event.get('device_brand'))
