@@ -12,7 +12,7 @@ services:
       - certbot_www:/var/www/certbot:ro
       - certbot_conf:/etc/letsencrypt:ro
       - static_volume:/static:ro
-    entrypoint: ["/docker-entrypoint.sh"]
+    entrypoint: ["sh", "/docker-entrypoint.sh"]
     environment:
       - SSL_DOMAIN=${SSL_DOMAIN:-api.avametric.online}
     depends_on:
