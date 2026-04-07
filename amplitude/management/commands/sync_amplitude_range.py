@@ -27,7 +27,28 @@ class Command(BaseCommand):
         )
 
         service = AmplitudeSyncService()
-        result = service.sync_date_range(start_date=start_date, end_date=end_date)
+
+        def on_day_done(day_result: dict) -> None:
+            day = day_result['date']
+            if day_result.get('error'):
+                self.stdout.write(
+                    self.style.ERROR(
+                        f"День {day} завершен с ошибкой: {day_result['error']}"
+                    )
+                )
+                return
+
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"День {day} завершен: обработано={day_result['processed']}, вставлено={day_result['inserted']}"
+                )
+            )
+
+        result = service.sync_date_range(
+            start_date=start_date,
+            end_date=end_date,
+            progress_callback=on_day_done,
+        )
 
         for day in result['days']:
             if day.get('error'):

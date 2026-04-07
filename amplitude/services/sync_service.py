@@ -1,7 +1,7 @@
 import hashlib
 import time as time_module
 from datetime import date, datetime, time, timedelta
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from django.conf import settings
 from django.db import transaction
@@ -46,7 +46,13 @@ class AmplitudeSyncService:
             'date': now.date().isoformat(),
         }
 
-    def sync_date_range(self, start_date: date, end_date: date, max_retries: int = 3) -> dict:
+    def sync_date_range(
+        self,
+        start_date: date,
+        end_date: date,
+        max_retries: int = 3,
+        progress_callback: Optional[Callable[[dict], None]] = None,
+    ) -> dict:
         """Синхронизировать все дни в диапазоне [start_date, end_date] включительно."""
         current_tz = timezone.get_current_timezone()
         today = timezone.localdate()
@@ -87,6 +93,13 @@ class AmplitudeSyncService:
                 'inserted': day_inserted,
                 'error': str(last_error) if last_error else None,
             })
+
+            if progress_callback is not None:
+                try:
+                    progress_callback(days_synced[-1])
+                except Exception:
+                    # Progress output must not break the sync itself.
+                    pass
 
             total_processed += day_processed
             total_inserted += day_inserted
