@@ -14,6 +14,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
+from celery.schedules import crontab
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -46,6 +47,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'amplitude',
+    'coupon_dispatch',
     'notifications',
 ]
 
@@ -135,7 +137,7 @@ LANGUAGES = [
     ('ru', 'Русский'),
 ]
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Almaty'
 
 USE_I18N = True
 
@@ -148,6 +150,8 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()
@@ -180,10 +184,20 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)
+CELERY_TIMEZONE = 'Asia/Almaty'
+CELERY_ENABLE_UTC = False
 CELERY_BEAT_SCHEDULE = {
     'run-amplitude-sync-hourly': {
         'task': 'amplitude.tasks.run_scheduled_sync',
         'schedule': timedelta(hours=1),
+    },
+    'collect-kid-birthdays-at-1am': {
+        'task': 'notifications.tasks.collect_kid_birthdays_task',
+        'schedule': crontab(minute='*'),
+    },
+    'dispatch-kid-birthday-notifications': {
+        'task': 'notifications.tasks.dispatch_kid_birthday_notifications_task',
+        'schedule': crontab(minute='*/5'),
     },
 }
 

@@ -5,7 +5,7 @@ from django.utils.html import format_html
 
 from .common import AmplitudeEventTranslations
 from .models import (
-    AllowedEmployeePosition,
+    AllowedEmployeePageAccess,
     AmplitudeSyncSchedule,
     BigDataPhoneDaySyncState,
     BigDataVisit,
@@ -207,17 +207,17 @@ class BigDataPhoneDaySyncStateAdmin(admin.ModelAdmin):
     search_fields = ('phone_normalized',)
 
 
-@admin.register(AllowedEmployeePosition)
-class AllowedEmployeePositionAdmin(admin.ModelAdmin):
-    list_display = ('position_guid', 'is_active', 'updated_at')
-    list_filter = ('is_active',)
-    search_fields = ('position_guid', 'note')
+@admin.register(AllowedEmployeePageAccess)
+class AllowedEmployeePageAccessAdmin(admin.ModelAdmin):
+    list_display = ('page', 'position_guid', 'is_active', 'updated_at')
+    list_filter = ('page', 'is_active')
+    search_fields = ('page', 'position_guid', 'note')
 
 
 @admin.register(UserEmployeeBinding)
 class UserEmployeeBindingAdmin(admin.ModelAdmin):
     list_display = ('user', 'iin', 'updated_at')
-    search_fields = ('user__username', 'iin')
+    search_fields = ('user__username', 'user__email', 'iin')
 
 
 @admin.register(LocationPresenceStatsCache)

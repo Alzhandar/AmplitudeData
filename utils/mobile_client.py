@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import IO, Any, Dict, List, Optional
 
 import requests
 from requests import HTTPError
@@ -18,7 +18,7 @@ class MobileClient:
 
     def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
         response = requests.get(
-            f'{self.base_url}/{path.lstrip("/")}',
+            self._url(path),
             params=params,
             headers=self._headers(),
             timeout=self.timeout_seconds,
@@ -27,14 +27,26 @@ class MobileClient:
         return response.json()
 
     def post(self, path: str, payload: Optional[Dict[str, Any]] = None) -> Any:
-        response = requests.post(
-            f'{self.base_url}/{path.lstrip("/")}',
-            json=payload,
-            headers=self._headers(),
-            timeout=self.timeout_seconds,
-        )
-        self._raise_for_status(response)
-        return response.json()
+        last_response: Optional[requests.Response] = None
+
+        for candidate in self._build_post_candidates(path):
+            response = self._post_json(self._url(candidate), payload)
+            last_response = response
+
+            if response.status_code < 400:
+                return self._json_or_empty(response)
+
+            # Keep trying path variants for common deployment mismatches.
+            if response.status_code in {404, 405}:
+                continue
+
+            self._raise_for_status(response)
+
+        if last_response is None:
+            raise ValueError('Mobile API request failed: no request candidates were generated')
+
+        self._raise_for_status(last_response)
+        return self._json_or_empty(last_response)
 
     def send_mass_push(
         self,
@@ -48,8 +60,8 @@ class MobileClient:
         notification_type: str = 'default',
         survey_id: Optional[int] = None,
         review_id: Optional[int] = None,
-    ) -> None:
-        """Send a mass push notification. Returns None on success (204 No Content)."""
+    ) -> Optional[int]:
+        """Send a mass push notification and return notification id when API provides it."""
         payload: Dict[str, Any] = {
             'phone_numbers': phone_numbers,
             'title': title,
@@ -72,6 +84,196 @@ class MobileClient:
             timeout=self.timeout_seconds,
         )
         self._raise_for_status(response)
+
+        raw = response.text.strip()
+        if not raw:
+            return None
+
+        try:
+            parsed = response.json()
+        except ValueError:
+            return None
+
+        if isinstance(parsed, dict):
+            value = parsed.get('notification_id', parsed.get('id'))
+            if value is None:
+                return None
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
+        if isinstance(parsed, list) and parsed:
+            first = parsed[0]
+            if isinstance(first, dict):
+                value = first.get('notification_id', first.get('id'))
+                if value is None:
+                    return None
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    return None
+
+        return None
+
+    def create_story(
+        self,
+        logo: IO[bytes],
+        city: int,
+        start_date: str,
+        end_date: str,
+        title: str = '',
+        is_active: bool = True,
+        story_type: str = 'DEFAULT',
+        user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Create a Story. Returns the created story dict (including its id)."""
+        data: Dict[str, Any] = {
+            'city': city,
+            'start_date': start_date,
+            'end_date': end_date,
+            'is_active': str(is_active).lower(),
+            'story_type': story_type,
+        }
+        if title:
+            data['title'] = title
+        if user_id is not None:
+            data['user_id'] = user_id
+
+        response = requests.post(
+            f'{self.base_url}/api/stories/',
+            data=data,
+            files={'logo': logo},
+            headers=self._auth_headers(),
+            timeout=self.timeout_seconds,
+        )
+        self._raise_for_status(response)
+        return response.json()
+
+    def create_story_display(
+        self,
+        story: int,
+        display_type: str,
+        title: str = '',
+        text: str = '',
+        image: Optional[IO[bytes]] = None,
+        video: Optional[IO[bytes]] = None,
+        park: Optional[int] = None,
+        link: str = '',
+        season: Optional[int] = None,
+        advertisement: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Create a Display screen for an existing Story."""
+        data: Dict[str, Any] = {
+            'story': story,
+            'display_type': display_type,
+        }
+        if title:
+            data['title'] = title
+        if text:
+            data['text'] = text
+        if park is not None:
+            data['park'] = park
+        if link:
+            data['link'] = link
+        if season is not None:
+            data['season'] = season
+        if advertisement is not None:
+            data['advertisement'] = advertisement
+
+        files: Dict[str, IO[bytes]] = {}
+        if image is not None:
+            files['image'] = image
+        if video is not None:
+            files['video'] = video
+
+        response = requests.post(
+            f'{self.base_url}/api/stories/displays/',
+            data=data,
+            files=files if files else None,
+            headers=self._auth_headers(),
+            timeout=self.timeout_seconds,
+        )
+        self._raise_for_status(response)
+        return response.json()
+
+    def create_story_recipient(
+        self,
+        phone_number: str,
+        story_id: int,
+        notification_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            'phone_number': phone_number,
+            'story_id': story_id,
+            'notification_id': notification_id,
+        }
+
+        response = requests.post(
+            f'{self.base_url}/api/stories/recipients/',
+            json=payload,
+            headers=self._headers(),
+            timeout=self.timeout_seconds,
+        )
+        self._raise_for_status(response)
+        return response.json()
+
+    def _auth_headers(self) -> Dict[str, str]:
+        """Auth-only headers for multipart requests (no Content-Type — requests sets it automatically)."""
+        return {'Authorization': f'Token {self.token}'}
+
+    def _url(self, path: str) -> str:
+        return f'{self.base_url}/{path.lstrip("/")}'
+
+    def _post_json(self, url: str, payload: Optional[Dict[str, Any]]) -> requests.Response:
+        return requests.post(
+            url,
+            json=payload,
+            headers=self._headers(),
+            timeout=self.timeout_seconds,
+        )
+
+    def _json_or_empty(self, response: requests.Response) -> Any:
+        raw = response.text.strip()
+        if not raw:
+            return {}
+        try:
+            return response.json()
+        except ValueError:
+            return {'raw': raw}
+
+    def _build_post_candidates(self, path: str) -> List[str]:
+        normalized = str(path or '').strip().lstrip('/')
+        if not normalized:
+            return []
+
+        variants = [normalized]
+
+        if normalized.startswith('api/v1/'):
+            stripped = normalized[len('api/v1/'):]
+            if stripped:
+                variants.append(stripped)
+                variants.append(f'api/{stripped}')
+        elif normalized.startswith('api/'):
+            stripped = normalized[len('api/'):]
+            if stripped:
+                variants.append(stripped)
+                variants.append(f'api/v1/{stripped}')
+        else:
+            variants.insert(0, f'api/{normalized}')
+            variants.append(f'api/v1/{normalized}')
+
+        candidates: List[str] = []
+        seen = set()
+        for variant in variants:
+            if not variant:
+                continue
+            for candidate in (variant.rstrip('/') + '/', variant.rstrip('/')):
+                if candidate and candidate not in seen:
+                    seen.add(candidate)
+                    candidates.append(candidate)
+
+        return candidates
 
     def _headers(self) -> Dict[str, str]:
         return {

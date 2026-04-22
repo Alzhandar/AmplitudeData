@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any, Dict
 
 from django.contrib.auth import authenticate
 from django.contrib.auth import get_user_model
@@ -12,9 +13,9 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from .models import DailyDeviceActivity, LocationPresenceStatsCache, UserEmployeeBinding
+from .serializers import DailyDeviceActivitySerializer
 from .services.employee_access_service import EmployeeAccessService
 from .services.location_presence_service import LocationPresenceAnalyticsService
-from .serializers import DailyDeviceActivitySerializer
 
 
 class DailyDeviceActivityViewSet(viewsets.ReadOnlyModelViewSet):
@@ -107,13 +108,18 @@ class AuthLoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        username = str(request.data.get('username', '')).strip()
+        email = str(request.data.get('email', '')).strip().lower()
         password = str(request.data.get('password', ''))
 
-        if not username or not password:
-            raise ValidationError({'detail': 'username and password are required'})
+        if not email or not password:
+            raise ValidationError({'detail': 'email and password are required'})
 
-        user = authenticate(request=request, username=username, password=password)
+        User = get_user_model()
+        user = User.objects.filter(email__iexact=email).first()
+        if user is None:
+            raise ValidationError({'detail': 'Invalid credentials'})
+
+        user = authenticate(request=request, username=user.username, password=password)
         if user is None:
             raise ValidationError({'detail': 'Invalid credentials'})
 
@@ -123,56 +129,67 @@ class AuthLoginView(APIView):
             raise ValidationError({'detail': 'Employee binding is missing. Please register first.'}) from exc
 
         access_service = EmployeeAccessService()
-        if not access_service.can_access_site(binding.iin):
-            raise ValidationError({'detail': 'Employee position is not allowed for this site'})
+        profile = access_service.get_employee_profile(binding.iin)
+        if profile is None:
+            raise ValidationError({'detail': 'Employee was not found or has no access to this site'})
+
+        allowed_pages = access_service.allowed_pages_for_position(profile.position_guid)
 
         token, _ = Token.objects.get_or_create(user=user)
-        return Response(
-            {
-                'token': token.key,
-                'user': {
-                    'id': user.id,
-                    'username': user.username,
-                },
-                'iin': binding.iin,
-            }
+        payload = _build_auth_response(
+            user=user,
+            iin=binding.iin,
+            profile=profile,
+            allowed_pages=allowed_pages,
         )
+        payload['token'] = token.key
+        return Response(payload)
 
 
 class AuthRegisterView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        username = str(request.data.get('username', '')).strip()
+        email = str(request.data.get('email', '')).strip().lower()
         password = str(request.data.get('password', ''))
         iin = str(request.data.get('iin', '')).strip()
 
-        if not username or not password or not iin:
-            raise ValidationError({'detail': 'username, password and iin are required'})
+        if not email or not password or not iin:
+            raise ValidationError({'detail': 'email, password and iin are required'})
 
         access_service = EmployeeAccessService()
-        if not access_service.can_access_site(iin):
-            raise ValidationError({'detail': 'Employee position is not allowed for this site'})
+        profile = access_service.get_employee_profile(iin)
+        if profile is None:
+            raise ValidationError({'detail': 'Employee was not found or has no access to this site'})
 
         User = get_user_model()
+        if UserEmployeeBinding.objects.filter(iin=iin).exists():
+            raise ValidationError({'detail': 'IIN is already registered'})
+        if User.objects.filter(email__iexact=email).exists():
+            raise ValidationError({'detail': 'Email is already registered'})
+
         try:
             with transaction.atomic():
-                user = User.objects.create_user(username=username, password=password)
+                user = User.objects.create_user(
+                    username=email,
+                    email=email,
+                    password=password,
+                )
                 UserEmployeeBinding.objects.create(user=user, iin=iin)
         except IntegrityError as exc:
-            raise ValidationError({'detail': 'Username or IIN is already registered'}) from exc
+            raise ValidationError({'detail': 'Email or IIN is already registered'}) from exc
+
+        allowed_pages = access_service.allowed_pages_for_position(profile.position_guid)
 
         token, _ = Token.objects.get_or_create(user=user)
-        return Response(
-            {
-                'token': token.key,
-                'user': {
-                    'id': user.id,
-                    'username': user.username,
-                },
-                'iin': iin,
-            }
+        payload = _build_auth_response(
+            user=user,
+            iin=iin,
+            profile=profile,
+            allowed_pages=allowed_pages,
         )
+        payload['token'] = token.key
+        return Response(payload)
 
 
 class AuthMeView(APIView):
@@ -180,11 +197,22 @@ class AuthMeView(APIView):
 
     def get(self, request):
         user = request.user
+        iin = ''
+        try:
+            iin = user.employee_binding.iin
+        except UserEmployeeBinding.DoesNotExist:
+            pass
+
+        access_service = EmployeeAccessService()
+        profile = access_service.get_employee_profile(iin) if iin else None
+        allowed_pages = access_service.allowed_pages_for_position(profile.position_guid) if profile else []
         return Response(
-            {
-                'id': user.id,
-                'username': user.username,
-            }
+            _build_auth_response(
+                user=user,
+                iin=iin,
+                profile=profile,
+                allowed_pages=allowed_pages,
+            )
         )
 
 
@@ -194,3 +222,25 @@ class AuthLogoutView(APIView):
     def post(self, request):
         Token.objects.filter(user=request.user).delete()
         return Response({'status': 'ok'})
+
+
+def _build_auth_response(
+    *,
+    user,
+    iin: str,
+    profile,
+    allowed_pages,
+) -> Dict[str, Any]:
+    return {
+        'user': {
+            'id': user.id,
+            'email': user.email,
+            'full_name': profile.full_name if profile else '',
+            'position': {
+                'guid': profile.position_guid if profile else '',
+                'name': profile.position_name if profile else '',
+            },
+        },
+        'iin': iin,
+        'allowed_pages': allowed_pages,
+    }

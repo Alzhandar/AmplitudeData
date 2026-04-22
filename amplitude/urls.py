@@ -1,7 +1,14 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from .views import AuthLoginView, AuthLogoutView, AuthMeView, AuthRegisterView, DailyDeviceActivityViewSet, LocationPresenceStatsViewSet
+from .views import (
+	AuthLoginView,
+	AuthLogoutView,
+	AuthMeView,
+	AuthRegisterView,
+	DailyDeviceActivityViewSet,
+	LocationPresenceStatsViewSet,
+)
 
 router = DefaultRouter()
 router.register('amplitude/today-mobile-activity', DailyDeviceActivityViewSet, basename='today-mobile-activity')
