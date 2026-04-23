@@ -50,7 +50,7 @@ class MobileClient:
 
     def send_mass_push(
         self,
-        phone_numbers: List[str],
+        phone_numbers: Optional[List[str]],
         title: str,
         body: str,
         title_kz: str = '',
@@ -62,13 +62,19 @@ class MobileClient:
         review_id: Optional[int] = None,
     ) -> Optional[int]:
         """Send a mass push notification and return notification id when API provides it."""
+        normalized_phones: Optional[List[str]]
+        if phone_numbers is None:
+            normalized_phones = None
+        else:
+            normalized_phones = [str(value).strip() for value in phone_numbers if str(value).strip()]
+
         payload: Dict[str, Any] = {
-            'phone_numbers': phone_numbers,
+            'phone_numbers': normalized_phones,
             'title': title,
             'body': body,
             'title_kz': title_kz,
             'body_kz': body_kz,
-            'city': city,
+            'city': str(city).strip(),
             'park': park,
             'notification_type': notification_type,
         }
@@ -77,44 +83,8 @@ class MobileClient:
         if review_id is not None:
             payload['review_id'] = review_id
 
-        response = requests.post(
-            f'{self.base_url}/api/notifications/send-mass-push/',
-            json=payload,
-            headers=self._headers(),
-            timeout=self.timeout_seconds,
-        )
-        self._raise_for_status(response)
-
-        raw = response.text.strip()
-        if not raw:
-            return None
-
-        try:
-            parsed = response.json()
-        except ValueError:
-            return None
-
-        if isinstance(parsed, dict):
-            value = parsed.get('notification_id', parsed.get('id'))
-            if value is None:
-                return None
-            try:
-                return int(value)
-            except (TypeError, ValueError):
-                return None
-
-        if isinstance(parsed, list) and parsed:
-            first = parsed[0]
-            if isinstance(first, dict):
-                value = first.get('notification_id', first.get('id'))
-                if value is None:
-                    return None
-                try:
-                    return int(value)
-                except (TypeError, ValueError):
-                    return None
-
-        return None
+        parsed = self.post('/api/notifications/send-mass-push/', payload)
+        return self._extract_notification_id(parsed)
 
     def create_story(
         self,
@@ -241,6 +211,29 @@ class MobileClient:
             return response.json()
         except ValueError:
             return {'raw': raw}
+
+    def _extract_notification_id(self, payload: Any) -> Optional[int]:
+        if isinstance(payload, dict):
+            value = payload.get('notification_id', payload.get('id'))
+            if value is None:
+                return None
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
+        if isinstance(payload, list) and payload:
+            first = payload[0]
+            if isinstance(first, dict):
+                value = first.get('notification_id', first.get('id'))
+                if value is None:
+                    return None
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    return None
+
+        return None
 
     def _build_post_candidates(self, path: str) -> List[str]:
         normalized = str(path or '').strip().lstrip('/')

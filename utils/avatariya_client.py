@@ -122,6 +122,16 @@ class AvatariyaClient:
         first_page = response.json()
         return self._collect_get_results_with_pagination(first_page, params=params)
 
+    def list_cities(self) -> List[Dict]:
+        response = requests.get(
+            f'{self.base_url}/city/',
+            headers=self._headers(),
+            timeout=self.timeout_seconds,
+        )
+        self._raise_for_status(response)
+        first_page = response.json()
+        return self._collect_get_results_with_pagination(first_page, params={})
+
     def list_coupon_assign_marketing_sales(self) -> List[Dict]:
         response = requests.get(
             f'{self.base_url}/admin/coupon-assign/marketing-sales/',
