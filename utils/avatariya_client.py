@@ -162,7 +162,18 @@ class AvatariyaClient:
         )
         self._raise_for_status(response)
         payload = response.json()
-        return payload if isinstance(payload, dict) else {}
+        if isinstance(payload, dict):
+            if isinstance(payload.get('total_crystals'), (int, float, str)):
+                return payload
+
+            results = payload.get('results')
+            if isinstance(results, list) and results and isinstance(results[0], dict):
+                return results[0]
+
+        if isinstance(payload, list) and payload and isinstance(payload[0], dict):
+            return payload[0]
+
+        return {}
 
     def list_crystal_transactions(
         self,
